@@ -302,7 +302,8 @@ void whisper_print_segment_callback(struct whisper_context * ctx, struct whisper
         }
 
         if (!params.no_timestamps) {
-            printf("[%s --> %s]  ", to_timestamp(t0).c_str(), to_timestamp(t1).c_str());
+            // printf("[%s --> %s]  ", to_timestamp(t0).c_str(), to_timestamp(t1).c_str());
+            printf("%d\n%s --> %s", i, to_timestamp(t0, true).c_str(), to_timestamp(t1, true).c_str());
         }
 
         if (params.diarize && pcmf32s.size() == 2) {
@@ -328,7 +329,7 @@ void whisper_print_segment_callback(struct whisper_context * ctx, struct whisper
         } else {
             const char * text = whisper_full_get_segment_text(ctx, i);
 
-            printf("%s%s", speaker.c_str(), text);
+            printf("\n%s%s", speaker.c_str(), text);
         }
 
         if (params.tinydiarize) {
@@ -428,6 +429,7 @@ bool output_srt(struct whisper_context * ctx, const char * fname, const whisper_
 
         fout << i + 1 + params.offset_n << "\n";
         fout << to_timestamp(t0, true) << " --> " << to_timestamp(t1, true) << "\n";
+
         fout << speaker << text << "\n\n";
     }
 
