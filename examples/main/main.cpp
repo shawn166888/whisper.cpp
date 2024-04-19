@@ -32,7 +32,7 @@ struct whisper_params {
     int32_t offset_t_ms   = 0;
     int32_t offset_n      = 0;
     int32_t duration_ms   = 0;
-    int32_t progress_step = 5;
+    int32_t progress_step = 1;
     int32_t max_context   = -1;
     int32_t max_len       = 0;
     int32_t best_of       = whisper_full_default_params(WHISPER_SAMPLING_GREEDY).greedy.best_of;
@@ -268,6 +268,58 @@ std::string estimate_diarization_speaker(std::vector<std::vector<float>> pcmf32s
 
     return speaker;
 }
+bool outputSegment(int index, int64_t t0, int64_t t1, const char *sp, const char *text, std::string fname) {
+    std::ofstream fout(fname, std::ios::app);
+    if (!fout.is_open()) {
+        // fprintf(stderr, "failed to open '%s' for writing\n");
+        return false;
+    }
+    fout << index << "\n" 
+        << to_timestamp(t0, true).c_str() << " --> " << to_timestamp(t1, true).c_str() << "\n"
+        << sp << text << "\n";
+    fout.flush();
+    return true;
+}
+bool outputProgress(int index, int64_t t0, int64_t t1, const char *sp, const char *text, std::string fname) {
+    std::ofstream fout(fname);
+    if (!fout.is_open()) {
+        // fprintf(stderr, "failed to open '%s' for writing\n");
+        return false;
+    }
+    // fout << index << "," << t0 << "," << t1 << "," << sp << "," << text << "\n";
+    fout << t1 << "\n";
+    fout.flush();
+    return true;
+}
+int readProgress(std::string fname) {
+    std::ifstream fin(fname);
+    std::string line;
+ 
+    if (fin.is_open()) {
+        while (getline(fin, line)) {
+            printf("string: %s\n", line.c_str());
+            int num = std::stoi(line);
+            printf("int %d", num);
+            fin.close();
+            return num;
+        }
+        fin.close();
+    } else {
+         printf("%s", "no lock file.");
+    }
+    return 0;
+}
+bool removeProgress(std::string fname) {
+   std::ofstream fout(fname);
+    if (!fout.is_open()) {
+        // fprintf(stderr, "failed to open '%s' for writing\n");
+        return false;
+    }
+    // fout << index << "," << t0 << "," << t1 << "," << sp << "," << text << "\n";
+    fout << 0 << "\n";
+    fout.flush();
+    return true;
+}
 void whisper_print_progress_callback(struct whisper_context * /*ctx*/, struct whisper_state * /*state*/, int progress, void * user_data) {
     int progress_step = ((whisper_print_user_data *) user_data)->params->progress_step;
     int * progress_prev  = &(((whisper_print_user_data *) user_data)->progress_prev);
@@ -304,6 +356,8 @@ void whisper_print_segment_callback(struct whisper_context * ctx, struct whisper
         if (!params.no_timestamps) {
             // printf("[%s --> %s]  ", to_timestamp(t0).c_str(), to_timestamp(t1).c_str());
             printf("%d\n%s --> %s", i, to_timestamp(t0, true).c_str(), to_timestamp(t1, true).c_str());
+            //  printf("\n%s%s", speaker.c_str(), text);
+            
         }
 
         if (params.diarize && pcmf32s.size() == 2) {
@@ -330,8 +384,13 @@ void whisper_print_segment_callback(struct whisper_context * ctx, struct whisper
             const char * text = whisper_full_get_segment_text(ctx, i);
 
             printf("\n%s%s", speaker.c_str(), text);
+            // const auto fname_out = f < (int) params.fname_out.size() && !params.fname_out[f].empty() ? params.fname_out[f] : params.fname_inp[f];
+            const auto fname_tmp = params.fname_out[0] + ".txt";
+            const auto fname_lock = params.fname_out[0] + ".lock";
+            outputSegment(i, t0, t1, speaker.c_str(), text, fname_tmp);
+            outputProgress(i, t0, t1, speaker.c_str(), text, fname_lock);
         }
-
+        
         if (params.tinydiarize) {
             if (whisper_full_get_segment_speaker_turn_next(ctx, i)) {
                 printf("%s", params.tdrz_speaker_turn.c_str());
@@ -344,6 +403,7 @@ void whisper_print_segment_callback(struct whisper_context * ctx, struct whisper
         }
 
         fflush(stdout);
+        // removeProgress(fname_lock);
     }
 }
 
@@ -962,7 +1022,7 @@ int main(int argc, char ** argv) {
             fprintf(stderr, "\n");
         }
     }
-
+    //loopiing each file
     for (int f = 0; f < (int) params.fname_inp.size(); ++f) {
         const auto fname_inp = params.fname_inp[f];
 		const auto fname_out = f < (int) params.fname_out.size() && !params.fname_out[f].empty() ? params.fname_out[f] : params.fname_inp[f];
@@ -1004,7 +1064,8 @@ int main(int argc, char ** argv) {
 
             fprintf(stderr, "\n");
         }
-
+        const auto fname_lock = fname_out + ".lock";
+        int start = readProgress(fname_lock);
         // run the inference
         {
             whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
@@ -1021,7 +1082,8 @@ int main(int argc, char ** argv) {
             wparams.detect_language  = params.detect_language;
             wparams.n_threads        = params.n_threads;
             wparams.n_max_text_ctx   = params.max_context >= 0 ? params.max_context : wparams.n_max_text_ctx;
-            wparams.offset_ms        = params.offset_t_ms;
+            wparams.offset_ms        = start != 0 ? start * 10 : params.offset_t_ms;
+            // wparams.offset_ms        = start * 10;
             wparams.duration_ms      = params.duration_ms;
 
             wparams.token_timestamps = params.output_wts || params.output_jsn_full || params.max_len > 0;
@@ -1103,7 +1165,7 @@ int main(int argc, char ** argv) {
                 return 10;
             }
         }
-
+        removeProgress(fname_lock);
         // output stuff
         {
             printf("\n");
