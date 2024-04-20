@@ -7,7 +7,7 @@ if [  -f "ggml-medium.bin"  ]; then
         echo "file_exist"
 else
         echo "file not exist"
-        source /download-ggml-model.sh medium
+        source download-ggml-model.sh medium
 fi
 
 #
